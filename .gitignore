@@ -1,0 +1,23 @@
+# Real data — never commit
+data/
+config.json
+.env
+
+# Generated
+report.html
+report.encrypted.html
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Local working artifacts (design docs, plans, project-local Claude settings)
+docs/
+.claude/
+
+# OS
+.DS_Store

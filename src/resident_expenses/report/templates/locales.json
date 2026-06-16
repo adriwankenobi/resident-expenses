@@ -1,0 +1,72 @@
+{
+  "es": {
+    "ui": {
+      "all": "Todos",
+      "year_prefix": "AÑO",
+      "income": "Ingresos",
+      "expenses": "Gastos",
+      "alerts": "Alertas",
+      "summary": "Resumen",
+      "days": "Días",
+      "balance": "Balance",
+      "transactions": "Movimientos",
+      "by_month_share": "(por mes y reparto por categoría)",
+      "legend_hint_chart": "Haz clic en una categoría de la leyenda para mostrarla u ocultarla · doble clic para aislarla (doble clic de nuevo para restaurar).",
+      "legend_hint_table": "Haz clic en una categoría para mostrarla u ocultarla · doble clic para aislarla (doble clic de nuevo para restaurar). Funciona igual en estas etiquetas y en las leyendas de los gráficos.",
+      "col_date": "Fecha",
+      "col_concept": "Concepto",
+      "col_category": "Categoría",
+      "col_amount": "Importe",
+      "col_balance": "Saldo",
+      "generated": "Generado el {date} · Moneda: {currency}",
+      "other_small": "Otros (<3%)",
+      "missing_badge_title": "Registrado pero no llegó a producirse"
+    },
+    "alerts": {
+      "label": {
+        "summary_mismatch": "Descuadre de resumen",
+        "missing_transaction": "Registrado pero no recibido"
+      },
+      "field": { "income": "ingresos", "expense": "gastos" },
+      "summary_mismatch": "{year}: {field} calculado {computed} ≠ resumen del PDF {summary}",
+      "missing_transaction": "Registrado pero no llegó a producirse: «{label}» ({date})"
+    },
+    "months": ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"],
+    "months_short": ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+  },
+  "en": {
+    "ui": {
+      "all": "All",
+      "year_prefix": "YEAR",
+      "income": "Income",
+      "expenses": "Expenses",
+      "alerts": "Alerts",
+      "summary": "Summary",
+      "days": "Days",
+      "balance": "Balance",
+      "transactions": "Transactions",
+      "by_month_share": "(by month and category share)",
+      "legend_hint_chart": "Click a category in the legend to show/hide it · double-click to isolate it (double-click again to restore).",
+      "legend_hint_table": "Click a category to show/hide it · double-click to isolate it (double-click again to restore). Works on these pills and the chart legends alike.",
+      "col_date": "Date",
+      "col_concept": "Concept",
+      "col_category": "Category",
+      "col_amount": "Amount",
+      "col_balance": "Balance",
+      "generated": "Generated {date} · Currency: {currency}",
+      "other_small": "Other (<3%)",
+      "missing_badge_title": "Recorded but did not actually occur"
+    },
+    "alerts": {
+      "label": {
+        "summary_mismatch": "Summary mismatch",
+        "missing_transaction": "Recorded but not received"
+      },
+      "field": { "income": "income", "expense": "expense" },
+      "summary_mismatch": "{year}: computed {field} {computed} ≠ PDF summary {summary}",
+      "missing_transaction": "Recorded but did not occur: '{label}' ({date})"
+    },
+    "months": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+    "months_short": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  }
+}

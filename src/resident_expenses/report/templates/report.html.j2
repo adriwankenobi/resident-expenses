@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>{{ model.building_name }} · {{ model.generated_at.strftime('%d/%m/%Y') }}</title>
+<style>
+  body { background: #1a1a1a; color: #ddd; font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 24px; }
+  h1, h2, h3 { color: #fff; }
+  .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+  .header .sub { color: #888; font-size: 13px; }
+  .tab-rows { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+  .year-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .year-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px 12px; background: #2d2d2d; border: 1px solid #555; border-radius: 4px; font-size: 12px; color: #ccc; cursor: pointer; line-height: 1.2; }
+  .year-tab.active { background: #094771; border-color: #007acc; color: #fff; }
+  .tab-index { font-size: 9px; font-weight: 700; letter-spacing: 0.06em; color: #888; text-transform: uppercase; }
+  .year-tab.active .tab-index { color: #9cc7e8; }
+  .tab-year { font-weight: 600; }
+  .tab-range { font-size: 10px; color: #999; }
+  .year-tab.active .tab-range { color: #cde3f5; }
+  #lang-tabs .year-tab { padding: 5px 8px; }
+  .flag { display: block; width: 22px; height: auto; border-radius: 2px; opacity: 0.5; transition: opacity 0.15s; }
+  #lang-tabs .year-tab.active .flag, #lang-tabs .year-tab:hover .flag { opacity: 1; }
+  .section { margin: 24px 0; padding: 16px; background: #1f1f1f; border-radius: 8px; border: 1px solid #333; }
+  .alert { padding: 8px 12px; background: #3a1e1e; border-left: 4px solid #f48771; margin: 6px 0; border-radius: 4px; font-size: 13px; }
+  .txn-missing td { opacity: 0.6; font-style: italic; background: #3a1e1e; }
+  .missing-badge { font-style: normal; margin-right: 4px; cursor: help; }
+  .kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .kpi { background: #2d2d2d; padding: 16px; border-radius: 6px; text-align: center; }
+  .kpi .big { font-size: 24px; font-weight: bold; color: #fff; }
+  .kpi .label { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top: 4px; }
+  .income { color: #1aa97a; }
+  .expense { color: #f48771; }
+  /* Two stacked rows of compact cards: income on its own row, expenses on the next.
+     Each row wraps as needed (income is few and stays one line; the many expense
+     categories flow onto ~2 lines) and the cards grow to share the width evenly. */
+  #cat-grid { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  .cat-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .cat-row:empty { display: none; }
+  .cat-card { flex: 1 1 150px; min-width: 120px; background: #2d2d2d; padding: 10px 12px; border-radius: 6px; text-align: center; border-top: 3px solid #4ec9b0; }
+  .cat-card .cat-name { font-size: 12px; font-weight: bold; color: #fff; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cat-card .cat-total { font-size: 18px; font-weight: bold; margin-bottom: 6px; }
+  .cat-card .cat-divider { height: 1px; background: #444; margin: 0 6px 6px; }
+  .cat-card .sub-value { font-size: 14px; font-weight: bold; color: #ddd; }
+  .cat-card .sub-label { font-size: 9px; color: #aaa; text-transform: uppercase; margin-top: 2px; }
+  .items-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 6px; }
+  .legend-hint { color: #888; font-size: 12px; margin: 0 0 12px; }
+  .legend-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 999px; color: #ddd; font-size: 12px; cursor: pointer; user-select: none; }
+  .legend-pill:hover { background: #333; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .legend-pill--off { opacity: 0.35; }
+  .legend-pill--off .legend-dot { background: #555 !important; }
+  .item-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .item-table th, .item-table td { padding: 6px 10px; border-bottom: 1px solid #333; }
+  .item-table th { color: #888; text-transform: uppercase; font-size: 11px; text-align: left; }
+  .item-table td.amount { text-align: right; font-variant-numeric: tabular-nums; }
+  .item-table th.amount { text-align: right; }
+  @keyframes rowFlash { 0% { background: #094771; } 100% { background: transparent; } }
+  .item-table tr.row-flash td { animation: rowFlash 1.5s ease-out; }
+  .chart-row { display: flex; flex-direction: column; gap: 16px; }
+  .chart-main { min-width: 0; }
+  .chart-donut { min-width: 0; width: 100%; max-width: 420px; align-self: center; }
+  .js-plotly-plot .slice path { cursor: pointer; }
+  .js-plotly-plot .legend .traces { cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>{{ model.building_name }}</h1>
+    <div class="sub" id="generated-line" data-i18n-tpl="ui.generated">Generated {{ model.generated_at.strftime('%d/%m/%Y') }} · Currency: {{ model.currency }}</div>
+  </div>
+  <div class="tab-rows">
+    <div class="year-tabs" id="year-tabs">
+      <div class="year-tab active" data-year="all"><span class="tab-year" data-i18n="ui.all">All</span></div>
+      {% for p in periods %}
+      <div class="year-tab" data-year="{{ p.year }}">
+        <span class="tab-index"><span data-i18n="ui.year_prefix">YEAR</span> {{ p.index }}</span>
+        <span class="tab-year">{{ p.heading }}</span>
+        <span class="tab-range">{{ p.range }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="year-tabs" id="kind-tabs">
+      <div class="year-tab active" data-kind="all" data-i18n="ui.all">All</div>
+      <div class="year-tab" data-kind="income" data-i18n="ui.income">Income</div>
+      <div class="year-tab" data-kind="expense" data-i18n="ui.expenses">Expenses</div>
+    </div>
+    <div class="year-tabs" id="lang-tabs">
+      <div class="year-tab active" data-lang="es" title="Español" aria-label="Español">
+        <svg class="flag" viewBox="0 0 3 2" aria-hidden="true"><rect width="3" height="2" fill="#c60b1e"/><rect width="3" height="1" y="0.5" fill="#ffc400"/></svg>
+      </div>
+      <div class="year-tab" data-lang="en" title="English" aria-label="English">
+        <svg class="flag" viewBox="0 0 60 30" aria-hidden="true">
+          <clipPath id="uk-clip"><path d="M0,0 v30 h60 v-30 z"/></clipPath>
+          <g clip-path="url(#uk-clip)">
+            <path d="M0,0 v30 h60 v-30 z" fill="#012169"/>
+            <path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/>
+            <path d="M0,0 L60,30 M60,0 L0,30" stroke="#c8102e" stroke-width="4"/>
+            <path d="M30,0 v30 M0,15 h60" stroke="#fff" stroke-width="10"/>
+            <path d="M30,0 v30 M0,15 h60" stroke="#c8102e" stroke-width="6"/>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" id="section-alerts" style="display:none">
+  <h2 data-i18n="ui.alerts">Alerts</h2>
+  <div id="alerts-body"></div>
+</div>
+
+<div class="section">
+  <h2 data-i18n="ui.summary">Summary</h2>
+  <div class="kpi-row">
+    <div class="kpi"><div class="big" id="kpi-days">—</div><div class="label" data-i18n="ui.days">Days</div></div>
+    <div class="kpi"><div class="big income" id="kpi-income">—</div><div class="label" data-i18n="ui.income">Income</div></div>
+    <div class="kpi"><div class="big expense" id="kpi-expense">—</div><div class="label" data-i18n="ui.expenses">Expenses</div></div>
+    <div class="kpi"><div class="big" id="kpi-balance">—</div><div class="label" data-i18n="ui.balance">Balance</div></div>
+    <div class="kpi"><div class="big" id="kpi-txns">—</div><div class="label" data-i18n="ui.transactions">Transactions</div></div>
+  </div>
+  <div id="cat-grid">
+    <div class="cat-row" id="cat-row-income"></div>
+    <div class="cat-row" id="cat-row-expense"></div>
+  </div>
+</div>
+
+<div class="section" id="section-income">
+  <h2><span data-i18n="ui.income">Income</span> <small style="color:#888;font-weight:normal" data-i18n="ui.by_month_share">(by month and category share)</small></h2>
+  <p class="legend-hint" data-i18n="ui.legend_hint_chart">Click a category in the legend to show/hide it · double-click to isolate it (double-click again to restore).</p>
+  <div class="chart-row">
+    <div id="chart-income-monthly" class="chart-main"></div>
+    <div id="chart-income-donut" class="chart-donut"></div>
+  </div>
+</div>
+
+<div class="section" id="section-expense">
+  <h2><span data-i18n="ui.expenses">Expenses</span> <small style="color:#888;font-weight:normal" data-i18n="ui.by_month_share">(by month and category share)</small></h2>
+  <p class="legend-hint" data-i18n="ui.legend_hint_chart">Click a category in the legend to show/hide it · double-click to isolate it (double-click again to restore).</p>
+  <div class="chart-row">
+    <div id="chart-expense-monthly" class="chart-main"></div>
+    <div id="chart-expense-donut" class="chart-donut"></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 data-i18n="ui.transactions">Transactions</h2>
+  <div id="items-legend" class="items-legend"></div>
+  <p class="legend-hint" data-i18n="ui.legend_hint_table">Click a category to show/hide it · double-click to isolate it (double-click again to restore). Works on these pills and the chart legends alike.</p>
+  <table class="item-table">
+    <thead><tr><th data-i18n="ui.col_date">Date</th><th data-i18n="ui.col_concept">Concept</th><th data-i18n="ui.col_category">Category</th><th class="amount" data-i18n="ui.col_amount">Amount</th><th class="amount" data-i18n="ui.col_balance">Balance</th></tr></thead>
+    <tbody id="items-body"></tbody>
+  </table>
+</div>
+
+<script>{{ plotly_js | safe }}</script>
+<script id="model-data" type="application/json">{{ data_json | safe }}</script>
+<script id="locale-data" type="application/json">{{ locales_json | safe }}</script>
+<script>
+(function () {
+  const data = JSON.parse(document.getElementById('model-data').textContent);
+  const locales = JSON.parse(document.getElementById('locale-data').textContent);
+  let activeLang = (function () {
+    try { const s = localStorage.getItem('resident-expenses-lang'); if (s === 'es' || s === 'en') return s; } catch (e) {}
+    return 'es';
+  })();
+  let L = locales[activeLang];
+  let activeYear = 'all';
+  let activeKind = 'all';
+  let legendTimer = null;
+  const hidden = new Set();
+
+  // Income and expense each draw from their own palette, so the unavoidable
+  // lookalikes (with many boxes you run out of clearly-distinct hues) land on
+  // opposite sides of the income/expense divide instead of sitting next to each
+  // other in the expense group. Within each palette consecutive entries jump hue,
+  // and the two sets pick from different families (income: teal/blue/yellow/pink/
+  // violet/brown; expense: a wider red→green→…→pink spread) so a near-twin pair is
+  // split between the sections rather than repeated inside one.
+  const INCOME_PALETTE = [
+    '#3ec9b0', '#5b7fe0', '#dcc94e', '#e87da9', '#a86cd8', '#bd8b5e',
+  ];
+  const EXPENSE_PALETTE = [
+    '#f25c54', '#5cc25c', '#e8923d', '#8a7bdc', '#a8cf4d', '#c586c0',
+    '#4fc1ff', '#d16969', '#569cd6', '#d7ba7d', '#3fb888', '#9cdcfe',
+    '#9a9a9a', '#e0a3c8',
+  ];
+  // Kind per category (first occurrence wins, consistent with the rest of the report).
+  const kindByCat = {};
+  (data.transactions || []).forEach(t => { if (!(t.category in kindByCat)) kindByCat[t.category] = t.kind; });
+  const colorMap = {};
+  let incomeIdx = 0, expenseIdx = 0;
+  (data.categories || []).forEach(c => {
+    colorMap[c] = kindByCat[c] === 'income'
+      ? INCOME_PALETTE[incomeIdx++ % INCOME_PALETTE.length]
+      : EXPENSE_PALETTE[expenseIdx++ % EXPENSE_PALETTE.length];
+  });
+  const colorFor = c => colorMap[c] || '#888';
+
+  const currencySymbol = ({ EUR: '€', USD: '$', GBP: '£' })[data.currency] || data.currency;
+  const symbolAfter = data.currency === 'EUR';
+  function formatAmount(v) {
+    const n = parseFloat(v).toFixed(2);
+    return symbolAfter ? n + ' ' + currencySymbol : currencySymbol + n;
+  }
+  function fmtAmt(token) { return symbolAfter ? token + ' ' + currencySymbol : currencySymbol + token; }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function formatDate(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+    return m ? m[3] + '/' + m[2] + '/' + m[1] : iso;
+  }
+  function tr(path) {
+    return path.split('.').reduce((o, k) => (o == null ? o : o[k]), L);
+  }
+  function applyLocale() {
+    L = locales[activeLang];
+    document.documentElement.lang = activeLang;
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const v = tr(el.getAttribute('data-i18n'));
+      if (typeof v === 'string') el.textContent = v;
+    });
+    const gen = document.getElementById('generated-line');
+    if (gen) {
+      gen.textContent = (L.ui.generated || '')
+        .replace('{date}', formatDate(data.generated_at))
+        .replace('{currency}', data.currency);
+    }
+    document.querySelectorAll('#lang-tabs .year-tab').forEach(el =>
+      el.classList.toggle('active', el.dataset.lang === activeLang));
+  }
+
+  // Time-period filter (the year tab) only — drives the transaction filter pills,
+  // which list the categories available in the selected period regardless of the
+  // income/expense tab.
+  function yearFiltered() {
+    return data.transactions.filter(t => activeYear === 'all' || String(t.year) === activeYear);
+  }
+  function filtered() {
+    return yearFiltered().filter(t => activeKind === 'all' || t.kind === activeKind);
+  }
+  function catsPresent(items) {
+    const present = new Set(items.map(t => t.category));
+    return (data.categories || []).filter(c => present.has(c));
+  }
+  function toggle(cat) {
+    if (hidden.has(cat)) hidden.delete(cat); else hidden.add(cat);
+    render();
+  }
+  // Double-click isolates a category (hide every other one); double-clicking the
+  // already-isolated category restores all. Single-click stays a plain toggle.
+  function isolate(cat) {
+    const all = data.categories || [];
+    const others = all.filter(c => c !== cat);
+    const alreadyIsolated = !hidden.has(cat) && others.every(c => hidden.has(c));
+    hidden.clear();
+    if (!alreadyIsolated) others.forEach(c => hidden.add(c));
+    render();
+  }
+
+  function render() {
+    const items = filtered();
+    const visible = items.filter(t => !hidden.has(t.category));
+    renderKpis(visible);
+    renderDays();
+    renderCards(items);
+    // Each kind owns a section (monthly bars + category-share donut). The kind tab
+    // hides the section it excludes, so "Income" drops the Expenses section entirely.
+    document.getElementById('section-income').style.display = activeKind === 'expense' ? 'none' : '';
+    document.getElementById('section-expense').style.display = activeKind === 'income' ? 'none' : '';
+    if (activeKind !== 'expense') {
+      renderMonthly('chart-income-monthly', 'income', items);
+      renderDonut('chart-income-donut', 'income', items);
+    }
+    if (activeKind !== 'income') {
+      renderMonthly('chart-expense-monthly', 'expense', items);
+      renderDonut('chart-expense-donut', 'expense', items);
+    }
+    renderTable(visible);
+    renderLegend();
+    renderAlerts();
+  }
+
+  function renderKpis(visible) {
+    let inc = 0, exp = 0;
+    visible.forEach(t => { const a = parseFloat(t.amount); if (t.kind === 'income') inc += a; else exp += a; });
+    document.getElementById('kpi-income').textContent = formatAmount(inc);
+    document.getElementById('kpi-expense').textContent = formatAmount(exp);
+    const bal = document.getElementById('kpi-balance');
+    bal.textContent = formatAmount(inc + exp);
+    bal.className = 'big ' + ((inc + exp) >= 0 ? 'income' : 'expense');
+    document.getElementById('kpi-txns').textContent = visible.length;
+  }
+
+  // The active exercise's bounds — for a specific tab, that period; for "All", the
+  // earliest start to the latest end across every exercise. ISO dates sort lexically,
+  // so min/max are plain string comparisons. Follows the year tab only.
+  function periodFor(year) {
+    const ps = data.periods || [];
+    if (!ps.length) return null;
+    if (year === 'all') {
+      return {
+        start: ps.map(p => p.start).reduce((a, b) => (a < b ? a : b)),
+        end: ps.map(p => p.end).reduce((a, b) => (a > b ? a : b)),
+      };
+    }
+    return ps.find(p => String(p.year) === year) || null;
+  }
+
+  function renderDays() {
+    const el = document.getElementById('kpi-days');
+    const p = periodFor(activeYear);
+    if (!p) { el.textContent = '—'; return; }
+    // Inclusive day count: both the first and last day of the exercise are counted.
+    el.textContent = Math.round((Date.parse(p.end) - Date.parse(p.start)) / 86400000) + 1;
+  }
+
+  function renderCards(items) {
+    const byCat = {};
+    items.forEach(t => {
+      byCat[t.category] = byCat[t.category] || { total: 0, count: 0, kind: t.kind };
+      byCat[t.category].total += parseFloat(t.amount);
+      byCat[t.category].count += 1;
+    });
+    const incomeRow = document.getElementById('cat-row-income');
+    const expenseRow = document.getElementById('cat-row-expense');
+    incomeRow.innerHTML = '';
+    expenseRow.innerHTML = '';
+    catsPresent(items).forEach(cat => {
+      const c = byCat[cat];
+      const card = document.createElement('div');
+      card.className = 'cat-card';
+      card.style.borderTopColor = colorFor(cat);
+      card.innerHTML =
+        '<div class="cat-name" title="' + escapeHtml(cat) + '">' + escapeHtml(cat) + '</div>' +
+        '<div class="cat-total" style="color:' + colorFor(cat) + '">' + formatAmount(c.total) + '</div>' +
+        '<div class="cat-divider"></div>' +
+        '<div><div class="sub-value">' + c.count + '</div><div class="sub-label">' + escapeHtml(L.ui.transactions) + '</div></div>';
+      // Income categories sort first in catsPresent, so each row keeps the shared
+      // color order; the kind decides which row the card lands in.
+      (c.kind === 'income' ? incomeRow : expenseRow).appendChild(card);
+    });
+  }
+
+  // Monthly stacked bars for a single kind. Income keeps its real sign so a negative
+  // income row (e.g. a refund inside the income section) stacks DOWNWARD instead of
+  // adding to the top of the bar; expenses are charted as magnitudes so the
+  // expense-only chart rises from zero (expense amounts are stored negative).
+  function renderMonthly(divId, kind, items) {
+    const subset = items.filter(t => t.kind === kind);
+    const monthSet = new Set();
+    const byCat = {};
+    subset.forEach(t => {
+      const m = t.date.slice(0, 7);
+      monthSet.add(m);
+      const v = parseFloat(t.amount);
+      byCat[t.category] = byCat[t.category] || {};
+      byCat[t.category][m] = (byCat[t.category][m] || 0) + (kind === 'income' ? v : Math.abs(v));
+    });
+    const months = Array.from(monthSet).sort();
+    // Plotly's date tickformat (%b %Y) only renders English month names, so we
+    // build the month text ourselves from the active locale: short names on the
+    // axis, full names in the hover. monthLabel takes an ISO "YYYY-MM" string.
+    const monthLabel = (iso, arr) => arr[parseInt(iso.slice(5, 7), 10) - 1] + ' ' + iso.slice(0, 4);
+    const traces = catsPresent(subset).map(cat => ({
+      x: months,
+      y: months.map(m => (byCat[cat] && byCat[cat][m]) || 0),
+      name: cat,
+      type: 'bar',
+      marker: { color: colorFor(cat) },
+      visible: hidden.has(cat) ? 'legendonly' : true,
+      customdata: months.map(m => monthLabel(m, L.months)),
+      hovertemplate: '<b>' + cat + '</b><br>%{customdata}<br>' + fmtAmt('%{y:.2f}') + '<extra></extra>',
+    }));
+    Plotly.newPlot(divId, traces, {
+      // 'relative' (not 'stack') so mixed signs separate at the axis: positive income
+      // stacks above zero and a negative income row (refund) drops below to its own
+      // value. For the all-positive expense chart the two modes render identically.
+      barmode: 'relative',
+      paper_bgcolor: '#1f1f1f', plot_bgcolor: '#1f1f1f', font: { color: '#ddd' },
+      // Bottom margin clears the month ticks; the legend is anchored further below so
+      // it never overlaps (and crops) the x-axis labels.
+      margin: { t: 20, b: 90 },
+      xaxis: { type: 'date', tickmode: 'array', tickvals: months, ticktext: months.map(m => monthLabel(m, L.months_short)) },
+      yaxis: { zeroline: true, zerolinecolor: '#666' },
+      legend: { orientation: 'h', yanchor: 'top', y: -0.25 },
+    }, { displayModeBar: false, responsive: true });
+    attachLegendHandlers(document.getElementById(divId));
+    const clickDiv = document.getElementById(divId);
+    clickDiv.on('plotly_click', evt => {
+      const pt = evt.points && evt.points[0];
+      if (!pt) return;
+      const category = pt.data.name;
+      const month = (typeof pt.x === 'string') ? pt.x.slice(0, 7) : null;
+      if (month) flashRows(category, month);
+    });
+    // Plotly overlays a transparent drag rect that captures the mouse and owns the
+    // cursor, so CSS on the bar <path> never shows. Toggle the drag layer's cursor
+    // on hover instead — plotly_hover only fires while the pointer is over a bar.
+    const dragCursor = c => { const d = clickDiv.querySelector('.nsewdrag'); if (d) d.style.cursor = c; };
+    clickDiv.on('plotly_hover', () => dragCursor('pointer'));
+    clickDiv.on('plotly_unhover', () => dragCursor(''));
+  }
+
+  // Category-share donut for a single kind, labelled with each slice's percentage.
+  // Values are magnitudes per category; hidden categories drop out so toggling a
+  // pill re-weights the percentages, consistent with the bars and table.
+  function renderDonut(divId, kind, items) {
+    const subset = items.filter(t => t.kind === kind && !hidden.has(t.category));
+    const byCat = {};
+    subset.forEach(t => { byCat[t.category] = (byCat[t.category] || 0) + Math.abs(parseFloat(t.amount)); });
+    const present = catsPresent(subset);
+    const total = present.reduce((s, c) => s + byCat[c], 0);
+
+    // Slices under 3% of the total are unreadable individually, so fold them into a
+    // single aggregated "Other (<3%)" slice (only when 2+ would qualify — folding a
+    // lone small slice would just hide its name for no gain). Its hover lists them.
+    const THRESHOLD = 0.03;
+    const small = total > 0 ? present.filter(c => byCat[c] / total < THRESHOLD) : [];
+    const aggregate = small.length >= 2;
+    const big = aggregate ? present.filter(c => !small.includes(c)) : present;
+
+    const labels = big.slice();
+    const values = big.map(c => byCat[c]);
+    const colors = big.map(colorFor);
+    const detail = big.map(() => '');
+    if (aggregate) {
+      labels.push(L.ui.other_small);
+      values.push(small.reduce((s, c) => s + byCat[c], 0));
+      colors.push('#8a8a8a');
+      // One line per folded category — name, amount and its share of the whole —
+      // so the aggregated slice's hover lists everything it contains, untruncated.
+      detail.push('<br>' + small.map(c =>
+        c + ': ' + formatAmount(byCat[c]) + ' (' + (total ? (100 * byCat[c] / total).toFixed(1) : '0.0') + '%)'
+      ).join('<br>'));
+    }
+    Plotly.newPlot(divId, [{
+      type: 'pie',
+      hole: 0.55,
+      labels: labels,
+      values: values,
+      customdata: detail,
+      marker: { colors: colors, line: { color: '#1f1f1f', width: 2 } },
+      sort: false,
+      direction: 'clockwise',
+      textinfo: 'percent',
+      texttemplate: '%{percent:.1%}',
+      textposition: 'auto',
+      // Tiny slices push their percent label outside with a leader line; automargin
+      // reserves room so those labels are not clipped at the chart edges.
+      automargin: true,
+      // customdata (the per-category breakdown) goes last so it reads: name, total,
+      // share, then the folded categories one per line. align:left + namelength:-1
+      // keep the multi-line list from being truncated or centered into a blob; no
+      // bgcolor override so each hover keeps its slice color (plotly's default).
+      hovertemplate: '<b>%{label}</b><br>' + fmtAmt('%{value:.2f}') + '<br>%{percent}%{customdata}<extra></extra>',
+      hoverlabel: { align: 'left', namelength: -1 },
+    }], {
+      paper_bgcolor: '#1f1f1f', font: { color: '#ddd' },
+      margin: { t: 40, b: 40, l: 40, r: 40 },
+      height: 340,
+      showlegend: false,
+    }, { displayModeBar: false, responsive: true });
+  }
+
+  // Single click toggles, double click isolates. The toggle is deferred behind a
+  // timer because render() re-plots the chart synchronously; without the delay the
+  // first click destroys the legend DOM before a double-click can complete.
+  // Clicking a monthly bar scrolls the Transactions table into view and briefly
+  // flashes the rows that compose that bar (matching category + ISO month). No
+  // filters change.
+  function flashRows(category, month) {
+    const tbody = document.getElementById('items-body');
+    let first = null;
+    tbody.querySelectorAll('tr').forEach(tr => {
+      if (tr.dataset.category === category && tr.dataset.month === month) {
+        tr.classList.remove('row-flash');
+        // reflow so the animation restarts if the same bar is clicked again
+        void tr.offsetWidth;
+        tr.classList.add('row-flash');
+        if (!first) first = tr;
+        setTimeout(() => tr.classList.remove('row-flash'), 1600);
+      }
+    });
+    (first || tbody).scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function attachLegendHandlers(div) {
+    div.on('plotly_legendclick', evt => {
+      const name = evt.data[evt.curveNumber].name;
+      if (legendTimer) clearTimeout(legendTimer);
+      legendTimer = setTimeout(() => { legendTimer = null; toggle(name); }, 250);
+      return false;
+    });
+    div.on('plotly_legenddoubleclick', evt => {
+      if (legendTimer) { clearTimeout(legendTimer); legendTimer = null; }
+      isolate(evt.data[evt.curveNumber].name);
+      return false;
+    });
+  }
+
+  function fillTpl(tpl, vals) {
+    return Object.keys(vals).reduce((s, k) => s.split('{' + k + '}').join(vals[k]), tpl || '');
+  }
+  function alertMessage(a) {
+    const p = a.payload || {};
+    if (a.kind === 'summary_mismatch') {
+      return fillTpl(L.alerts.summary_mismatch, {
+        year: p.year,
+        field: (L.alerts.field && L.alerts.field[p.field]) || p.field,
+        computed: p.computed,
+        summary: p.summary,
+      });
+    }
+    if (a.kind === 'missing_transaction') {
+      return fillTpl(L.alerts.missing_transaction, {
+        label: p.label,
+        date: formatDate(p.date),
+      });
+    }
+    return a.message || '';
+  }
+  function renderAlerts() {
+    const section = document.getElementById('section-alerts');
+    const body = document.getElementById('alerts-body');
+    const alerts = data.alerts || [];
+    section.style.display = alerts.length ? '' : 'none';
+    body.innerHTML = '';
+    alerts.forEach(a => {
+      const label = (L.alerts.label && L.alerts.label[a.kind]) || a.kind;
+      const div = document.createElement('div');
+      div.className = 'alert';
+      div.innerHTML = '<strong>' + escapeHtml(label) + '</strong> — ' + escapeHtml(alertMessage(a));
+      body.appendChild(div);
+    });
+  }
+
+  function renderTable(items) {
+    const tbody = document.getElementById('items-body');
+    tbody.innerHTML = '';
+    // Sort by chronological seq descending (newest first), not the date string: this
+    // is the exact reverse of the balance accumulation, so the running balance reads
+    // consistently and same-day rows keep their data-source order.
+    items.slice().sort((a, b) => b.seq - a.seq).forEach(t => {
+      const color = colorFor(t.category);
+      const tr = document.createElement('tr');
+      tr.style.color = color;
+      tr.innerHTML =
+        '<td style="border-left:3px solid ' + color + '">' + formatDate(t.date) + '</td>' +
+        '<td>' + (t.missing ? '<span class="missing-badge" title="' + escapeHtml(L.ui.missing_badge_title) + '" aria-hidden="true">⚠</span>' : '') + escapeHtml(t.label) + '</td>' +
+        '<td>' + escapeHtml(t.category) + '</td>' +
+        '<td class="amount">' + formatAmount(t.amount) + '</td>' +
+        // Account balance is fixed per row (embedded server-side) and account-level,
+        // not category-level, so it keeps a neutral color instead of the row tint.
+        '<td class="amount" style="color:#ddd">' + formatAmount(t.balance) + '</td>';
+      if (t.missing) tr.classList.add('txn-missing');
+      tr.dataset.category = t.category;
+      tr.dataset.month = t.date.slice(0, 7);
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderLegend() {
+    const container = document.getElementById('items-legend');
+    container.innerHTML = '';
+    // Only the categories present in the selected time period (year tab), so the
+    // filter never offers a category absent from the current exercise.
+    catsPresent(yearFiltered()).forEach(cat => {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'legend-pill' + (hidden.has(cat) ? ' legend-pill--off' : '');
+      pill.innerHTML = '<span class="legend-dot" style="background:' + colorFor(cat) + '"></span>' + escapeHtml(cat);
+      // Disambiguate single- (toggle) vs double-click (isolate): a short timer
+      // lets a following dblclick cancel the pending single-click toggle.
+      let clickTimer = null;
+      pill.addEventListener('click', () => {
+        if (clickTimer) return;
+        clickTimer = setTimeout(() => { clickTimer = null; toggle(cat); }, 220);
+      });
+      pill.addEventListener('dblclick', () => {
+        if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+        isolate(cat);
+      });
+      container.appendChild(pill);
+    });
+  }
+
+  document.getElementById('year-tabs').addEventListener('click', e => {
+    // Tabs hold inner spans (heading + range), so a click can land on a child —
+    // resolve up to the .year-tab itself.
+    const tab = e.target.closest('.year-tab');
+    if (!tab) return;
+    document.querySelectorAll('#year-tabs .year-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    activeYear = tab.dataset.year;
+    render();
+  });
+
+  document.getElementById('kind-tabs').addEventListener('click', e => {
+    if (!e.target.classList.contains('year-tab')) return;
+    document.querySelectorAll('#kind-tabs .year-tab').forEach(t => t.classList.remove('active'));
+    e.target.classList.add('active');
+    activeKind = e.target.dataset.kind;
+    render();
+  });
+
+  document.getElementById('lang-tabs').addEventListener('click', e => {
+    const tab = e.target.closest('.year-tab');
+    if (!tab) return;
+    activeLang = tab.dataset.lang;
+    try { localStorage.setItem('resident-expenses-lang', activeLang); } catch (e) {}
+    applyLocale();
+    render();
+  });
+
+  applyLocale();
+  render();
+})();
+</script>
+
+</body>
+</html>
