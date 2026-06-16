@@ -5,7 +5,8 @@ config.json
 
 # Generated
 report.html
-report.encrypted.html
+web/node_modules/
+web/dist/
 
 # Python
 .venv/

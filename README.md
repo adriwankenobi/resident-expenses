@@ -9,6 +9,7 @@ report — publishable behind a shared password so every neighbor can read it.
 ```bash
 just install
 ```
+Installs the Python deps (uv) and the `web/` publish toolchain (npm — needs a recent Node).
 
 ## Data flow
 
@@ -37,10 +38,20 @@ Config precedence: `--config` flag > `RESIDENT_EXPENSES_CONFIG` env var > `./con
 
 ## Publish (access control)
 
-The report is a single HTML file. `just publish` encrypts it with a shared password
-(StatiCrypt, AES-decrypted in the browser) into `report.encrypted.html`. Push only that
-encrypted file to a GitHub Pages repo. Neighbors open the URL and enter the shared
-password — no server, no accounts, nothing stored in plaintext.
+The report is a single HTML file. `just publish` (the npm toolchain in `web/`) encrypts it
+with a shared password (StatiCrypt, AES-decrypted in the browser) and pushes only the
+encrypted file — as `index.html` — to this repo's `gh-pages` branch, which GitHub Pages
+serves at <https://adriwankenobi.github.io/resident-expenses/>. Neighbors open the URL and
+enter the shared password — no server, no accounts, nothing stored in plaintext.
+
+```bash
+just report    # (re)build report.html from data/
+just publish   # encrypt + force-push to gh-pages
+```
+
+Prerequisites: `STATICRYPT_PASSWORD` in `.env`, and `just install`. The plaintext
+`report.html` and `data/` are never committed or published — only the encrypted
+`web/dist/index.html` reaches the public branch.
 
 ## Develop
 

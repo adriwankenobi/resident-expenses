@@ -1,0 +1,15 @@
+{
+  "name": "resident-expenses-report",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Encrypt report.html with StatiCrypt and publish it to GitHub Pages.",
+  "scripts": {
+    "build": "rm -rf dist && staticrypt ../report.html --short -c false -d dist && mv dist/report.html dist/index.html",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.3.0",
+    "staticrypt": "^3.5.4"
+  }
+}

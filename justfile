@@ -1,11 +1,16 @@
 set dotenv-load := true
 
+# Prepend Homebrew node so the web/ npm scripts bypass the system/nvm node,
+# which is too old for staticrypt/gh-pages.
+export PATH := "/usr/local/opt/node/bin:" + env_var('PATH')
+
 default:
     @just --choose
 
-# Install dependencies via uv.
+# Install dependencies: Python (uv) + the web/ publish toolchain (npm).
 install:
     uv sync
+    cd web && npm install
 
 # Run lint + types + tests.
 check:
@@ -26,8 +31,10 @@ report:
 extract-pdf path:
     uv run scripts/extract_pdf_text.py "{{path}}"
 
-# Encrypt report.html with a shared password and publish the encrypted file.
-# Requires STATICRYPT_PASSWORD in the environment (e.g. in .env).
+# Encrypt report.html and publish it to GitHub Pages (gh-pages branch).
+# Requires STATICRYPT_PASSWORD in the environment (e.g. in .env) and `just install`.
+# The web/ scripts encrypt report.html into web/dist/index.html and push ONLY
+# that file, so no plaintext report or data/ can ever reach the public branch.
 publish:
-    npx staticrypt report.html -p "$STATICRYPT_PASSWORD" --short -o report.encrypted.html
-    @echo "Encrypted report written to report.encrypted.html — push it to your GitHub Pages repo."
+    cd web && npm run deploy
+    @echo "Published. Pages URL: https://adriwankenobi.github.io/resident-expenses/"

@@ -63,6 +63,12 @@ All tests use synthetic fixtures in `tmp_path` or inline. `just check` = ruff + 
 
 ## Publishing
 
-`just publish` encrypts `report.html` with the shared `STATICRYPT_PASSWORD` (StatiCrypt)
-into `report.encrypted.html`. Only the encrypted file is pushed to GitHub Pages. Neither
-the plaintext report nor any real data is ever committed.
+The publish toolchain lives in `web/` (a small npm project: `staticrypt` + `gh-pages`,
+pinned, installed by `just install`). `just publish` runs `web/`'s `npm run deploy`, which
+encrypts `report.html` with the shared `STATICRYPT_PASSWORD` (StatiCrypt) into
+`web/dist/index.html`, then `gh-pages` force-pushes **only that directory** to the
+`gh-pages` branch — GitHub Pages serves it. Because only `web/dist/` is published, the
+plaintext report and `data/` can never reach the public branch; nothing sensitive is ever
+committed to `main` either (`report.html`, `data/`, `web/dist/`, `web/node_modules/` are all
+gitignored). StatiCrypt config is disabled (`-c false`), so each publish uses a fresh random
+salt — fine since the report is republished wholesale.
