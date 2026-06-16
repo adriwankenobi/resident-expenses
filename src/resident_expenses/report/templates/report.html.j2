@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ model.building_name }} · {{ model.generated_at.strftime('%d/%m/%Y') }}</title>
 <style>
   body { background: #1a1a1a; color: #ddd; font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 24px; }
@@ -49,6 +50,10 @@
   .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   .legend-pill--off { opacity: 0.35; }
   .legend-pill--off .legend-dot { background: #555 !important; }
+  /* Let the wide 5-column table scroll sideways on narrow screens instead of
+     forcing the whole page wider than the viewport. -webkit-overflow-scrolling
+     gives momentum scroll on iOS. */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .item-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .item-table th, .item-table td { padding: 6px 10px; border-bottom: 1px solid #333; }
   .item-table th { color: #888; text-transform: uppercase; font-size: 11px; text-align: left; }
@@ -61,6 +66,24 @@
   .chart-donut { min-width: 0; width: 100%; max-width: 420px; align-self: center; }
   .js-plotly-plot .slice path { cursor: pointer; }
   .js-plotly-plot .legend .traces { cursor: pointer; }
+
+  /* Phones / narrow viewports. Without these the desktop layout (5-up KPI grid,
+     right-anchored tab stack, 24px gutters) renders cramped and overflowing. */
+  @media (max-width: 640px) {
+    body { padding: 12px; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    .section { margin: 16px 0; padding: 12px; }
+    /* Stack the title above the tab stack and let every tab row span the full
+       width and wrap left-to-right instead of hugging the right edge. */
+    .header { flex-direction: column; align-items: stretch; gap: 10px; }
+    .tab-rows { align-items: stretch; }
+    .year-tabs { justify-content: flex-start; }
+    /* KPIs flow into as many columns as fit (2 on a typical phone) rather than
+       being crushed into five. */
+    .kpi-row { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+    .kpi { padding: 12px; }
+    .kpi .big { font-size: 20px; }
+  }
 </style>
 </head>
 <body>
@@ -133,6 +156,7 @@
     <div id="chart-income-monthly" class="chart-main"></div>
     <div id="chart-income-donut" class="chart-donut"></div>
   </div>
+  <div id="legend-income" class="items-legend"></div>
 </div>
 
 <div class="section" id="section-expense">
@@ -142,16 +166,19 @@
     <div id="chart-expense-monthly" class="chart-main"></div>
     <div id="chart-expense-donut" class="chart-donut"></div>
   </div>
+  <div id="legend-expense" class="items-legend"></div>
 </div>
 
 <div class="section">
   <h2 data-i18n="ui.transactions">Transactions</h2>
   <div id="items-legend" class="items-legend"></div>
   <p class="legend-hint" data-i18n="ui.legend_hint_table">Click a category to show/hide it · double-click to isolate it (double-click again to restore). Works on these pills and the chart legends alike.</p>
-  <table class="item-table">
-    <thead><tr><th data-i18n="ui.col_date">Date</th><th data-i18n="ui.col_concept">Concept</th><th data-i18n="ui.col_category">Category</th><th class="amount" data-i18n="ui.col_amount">Amount</th><th class="amount" data-i18n="ui.col_balance">Balance</th></tr></thead>
-    <tbody id="items-body"></tbody>
-  </table>
+  <div class="table-scroll">
+    <table class="item-table">
+      <thead><tr><th data-i18n="ui.col_date">Date</th><th data-i18n="ui.col_concept">Concept</th><th data-i18n="ui.col_category">Category</th><th class="amount" data-i18n="ui.col_amount">Amount</th><th class="amount" data-i18n="ui.col_balance">Balance</th></tr></thead>
+      <tbody id="items-body"></tbody>
+    </table>
+  </div>
 </div>
 
 <script>{{ plotly_js | safe }}</script>
@@ -168,7 +195,6 @@
   let L = locales[activeLang];
   let activeYear = 'all';
   let activeKind = 'all';
-  let legendTimer = null;
   const hidden = new Set();
 
   // Income and expense each draw from their own palette, so the unavoidable
@@ -185,7 +211,27 @@
     '#f25c54', '#5cc25c', '#e8923d', '#8a7bdc', '#a8cf4d', '#c586c0',
     '#4fc1ff', '#d16969', '#569cd6', '#d7ba7d', '#3fb888', '#9cdcfe',
     '#9a9a9a', '#e0a3c8',
+    // Filling the palette's hue gaps so a 15th+ expense category gets its own colour
+    // instead of wrapping onto the first one: yellow, turquoise, indigo, purple,
+    // brown, rose.
+    '#e8d44d', '#17a39a', '#4f5bd5', '#9b59b6', '#a9683f', '#d65a7a',
   ];
+  // Past the curated palette (only with very many categories) keep generating
+  // distinct colours by golden-angle hue rotation, so successive ones stay far apart
+  // on the wheel and never collapse onto an earlier hue the way a modulo wrap would.
+  function hslToHex(h, s, l) {
+    s /= 100; l /= 100;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+    const hex = x => Math.round(255 * x).toString(16).padStart(2, '0');
+    return '#' + hex(f(0)) + hex(f(8)) + hex(f(4));
+  }
+  // Income and expense seed the overflow rotation at different hues so their generated
+  // colours can't coincide either.
+  function paletteColor(palette, i, hueSeed) {
+    if (i < palette.length) return palette[i];
+    return hslToHex((hueSeed + (i - palette.length) * 137.508) % 360, 60, 64);
+  }
   // Kind per category (first occurrence wins, consistent with the rest of the report).
   const kindByCat = {};
   (data.transactions || []).forEach(t => { if (!(t.category in kindByCat)) kindByCat[t.category] = t.kind; });
@@ -193,10 +239,14 @@
   let incomeIdx = 0, expenseIdx = 0;
   (data.categories || []).forEach(c => {
     colorMap[c] = kindByCat[c] === 'income'
-      ? INCOME_PALETTE[incomeIdx++ % INCOME_PALETTE.length]
-      : EXPENSE_PALETTE[expenseIdx++ % EXPENSE_PALETTE.length];
+      ? paletteColor(INCOME_PALETTE, incomeIdx++, 90)
+      : paletteColor(EXPENSE_PALETTE, expenseIdx++, 20);
   });
   const colorFor = c => colorMap[c] || '#888';
+
+  // Phone-sized viewport. Evaluated at plot time so the charts get readable fonts,
+  // a taller frame, and thinned month ticks; matches the CSS @media breakpoint.
+  const isMobile = () => window.matchMedia('(max-width: 640px)').matches;
 
   const currencySymbol = ({ EUR: '€', USD: '$', GBP: '£' })[data.currency] || data.currency;
   const symbolAfter = data.currency === 'EUR';
@@ -273,10 +323,12 @@
     if (activeKind !== 'expense') {
       renderMonthly('chart-income-monthly', 'income', items);
       renderDonut('chart-income-donut', 'income', items);
+      fillLegend('legend-income', catsPresent(items.filter(t => t.kind === 'income')));
     }
     if (activeKind !== 'income') {
       renderMonthly('chart-expense-monthly', 'expense', items);
       renderDonut('chart-expense-donut', 'expense', items);
+      fillLegend('legend-expense', catsPresent(items.filter(t => t.kind === 'expense')));
     }
     renderTable(visible);
     renderLegend();
@@ -374,20 +426,30 @@
       customdata: months.map(m => monthLabel(m, L.months)),
       hovertemplate: '<b>' + cat + '</b><br>%{customdata}<br>' + fmtAmt('%{y:.2f}') + '<extra></extra>',
     }));
+    const mobile = isMobile();
+    // Array ticks can't auto-thin, so on a phone show roughly six evenly-spaced
+    // month labels (blank the rest) and keep them horizontal/legible instead of the
+    // collided, auto-rotated wall of all twelve. The hover still names every month.
+    const step = mobile ? Math.max(1, Math.ceil(months.length / 6)) : 1;
+    const ticktext = months.map((m, i) => (i % step === 0 ? monthLabel(m, L.months_short) : ''));
     Plotly.newPlot(divId, traces, {
       // 'relative' (not 'stack') so mixed signs separate at the axis: positive income
       // stacks above zero and a negative income row (refund) drops below to its own
       // value. For the all-positive expense chart the two modes render identically.
       barmode: 'relative',
-      paper_bgcolor: '#1f1f1f', plot_bgcolor: '#1f1f1f', font: { color: '#ddd' },
-      // Bottom margin clears the month ticks; the legend is anchored further below so
-      // it never overlaps (and crops) the x-axis labels.
-      margin: { t: 20, b: 90 },
-      xaxis: { type: 'date', tickmode: 'array', tickvals: months, ticktext: months.map(m => monthLabel(m, L.months_short)) },
-      yaxis: { zeroline: true, zerolinecolor: '#666' },
-      legend: { orientation: 'h', yanchor: 'top', y: -0.25 },
+      paper_bgcolor: '#1f1f1f', plot_bgcolor: '#1f1f1f',
+      font: { color: '#ddd', size: mobile ? 11 : 12 },
+      // The legend lives in a plain HTML list below the chart now, so the bottom
+      // margin only needs to clear the month ticks. A taller frame on mobile keeps
+      // the bars readable.
+      height: mobile ? 340 : undefined,
+      margin: mobile ? { t: 10, b: 40, l: 44, r: 10 } : { t: 20, b: 44 },
+      // fixedrange on both axes disables drag/scroll/pinch zoom while leaving hover
+      // and bar clicks (which flash the matching table rows) working.
+      xaxis: { type: 'date', tickmode: 'array', tickvals: months, ticktext: ticktext, tickfont: { size: mobile ? 10 : 11 }, fixedrange: true },
+      yaxis: { zeroline: true, zerolinecolor: '#666', tickfont: { size: mobile ? 10 : 11 }, fixedrange: true },
+      showlegend: false,
     }, { displayModeBar: false, responsive: true });
-    attachLegendHandlers(document.getElementById(divId));
     const clickDiv = document.getElementById(divId);
     clickDiv.on('plotly_click', evt => {
       const pt = evt.points && evt.points[0];
@@ -458,9 +520,11 @@
       hovertemplate: '<b>%{label}</b><br>' + fmtAmt('%{value:.2f}') + '<br>%{percent}%{customdata}<extra></extra>',
       hoverlabel: { align: 'left', namelength: -1 },
     }], {
-      paper_bgcolor: '#1f1f1f', font: { color: '#ddd' },
-      margin: { t: 40, b: 40, l: 40, r: 40 },
-      height: 340,
+      paper_bgcolor: '#1f1f1f', font: { color: '#ddd', size: isMobile() ? 11 : 12 },
+      // Tighter margins on a phone so the ring itself stays large; automargin still
+      // reserves room for any leader-lined percent labels at the edges.
+      margin: isMobile() ? { t: 24, b: 24, l: 16, r: 16 } : { t: 40, b: 40, l: 40, r: 40 },
+      height: isMobile() ? 300 : 340,
       showlegend: false,
     }, { displayModeBar: false, responsive: true });
   }
@@ -485,20 +549,6 @@
       }
     });
     (first || tbody).scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
-
-  function attachLegendHandlers(div) {
-    div.on('plotly_legendclick', evt => {
-      const name = evt.data[evt.curveNumber].name;
-      if (legendTimer) clearTimeout(legendTimer);
-      legendTimer = setTimeout(() => { legendTimer = null; toggle(name); }, 250);
-      return false;
-    });
-    div.on('plotly_legenddoubleclick', evt => {
-      if (legendTimer) { clearTimeout(legendTimer); legendTimer = null; }
-      isolate(evt.data[evt.curveNumber].name);
-      return false;
-    });
   }
 
   function fillTpl(tpl, vals) {
@@ -562,29 +612,39 @@
     });
   }
 
-  function renderLegend() {
-    const container = document.getElementById('items-legend');
+  // One clickable category pill: single-click toggles, double-click isolates. A short
+  // timer disambiguates the two (a following dblclick cancels the pending toggle).
+  function makeLegendPill(cat) {
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'legend-pill' + (hidden.has(cat) ? ' legend-pill--off' : '');
+    pill.innerHTML = '<span class="legend-dot" style="background:' + colorFor(cat) + '"></span>' + escapeHtml(cat);
+    let clickTimer = null;
+    pill.addEventListener('click', () => {
+      if (clickTimer) return;
+      clickTimer = setTimeout(() => { clickTimer = null; toggle(cat); }, 220);
+    });
+    pill.addEventListener('dblclick', () => {
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+      isolate(cat);
+    });
+    return pill;
+  }
+
+  // Fill a legend container with category pills. Used for the Transactions filter and
+  // for each chart's own legend — a plain wrapping list rather than Plotly's built-in
+  // legend, which collapses into an awkward horizontal scroll-box on narrow screens.
+  function fillLegend(containerId, cats) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
     container.innerHTML = '';
+    cats.forEach(cat => container.appendChild(makeLegendPill(cat)));
+  }
+
+  function renderLegend() {
     // Only the categories present in the selected time period (year tab), so the
     // filter never offers a category absent from the current exercise.
-    catsPresent(yearFiltered()).forEach(cat => {
-      const pill = document.createElement('button');
-      pill.type = 'button';
-      pill.className = 'legend-pill' + (hidden.has(cat) ? ' legend-pill--off' : '');
-      pill.innerHTML = '<span class="legend-dot" style="background:' + colorFor(cat) + '"></span>' + escapeHtml(cat);
-      // Disambiguate single- (toggle) vs double-click (isolate): a short timer
-      // lets a following dblclick cancel the pending single-click toggle.
-      let clickTimer = null;
-      pill.addEventListener('click', () => {
-        if (clickTimer) return;
-        clickTimer = setTimeout(() => { clickTimer = null; toggle(cat); }, 220);
-      });
-      pill.addEventListener('dblclick', () => {
-        if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-        isolate(cat);
-      });
-      container.appendChild(pill);
-    });
+    fillLegend('items-legend', catsPresent(yearFiltered()));
   }
 
   document.getElementById('year-tabs').addEventListener('click', e => {
